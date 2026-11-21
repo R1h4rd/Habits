@@ -64,6 +64,25 @@
   .iconbtn { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); color: var(--ink); font-size: 18px; cursor: pointer; display: grid; place-items: center; }
   .menu { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
   .menu button { text-align: left; padding: 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font: inherit; font-weight: 600; cursor: pointer; }
+  .cell.blank { background: none; cursor: default; }
+  .calnav { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 2px; }
+  .nav { width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font-size: 22px; line-height: 1; cursor: pointer; }
+  .nav:disabled { opacity: .3; cursor: default; }
+  .caltitle { border: 0; background: none; color: var(--ink); font: inherit; font-weight: 700; font-size: 16px; cursor: pointer; padding: 8px 12px; border-radius: 10px; }
+  .calsum { text-align: center; font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+  .seg.small { margin-bottom: 10px; }
+  .seg.small button { padding: 7px; font-size: 13px; }
+  .year { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .mini { display: flex; flex-direction: column; justify-content: flex-start; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 8px 6px 6px; color: var(--ink); font: inherit; cursor: pointer; text-align: left; }
+  .mini.futm { opacity: .35; cursor: default; }
+  .mini span { display: block; font-size: 12px; font-weight: 600; margin: 0 0 5px 2px; }
+  .mgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+  .mgrid i { aspect-ratio: 1; border-radius: 2px; background: var(--empty); }
+  .mgrid i:empty:not([class]) { background: none; }
+  .mgrid i.on { background: var(--c); }
+  .mgrid i.slip { background: var(--danger); }
+  .mgrid i.off, .mgrid i.future { opacity: .35; }
+  .mgrid i.today { outline: 1px solid var(--ink); }
   .wd { text-align: center; font-size: 11px; color: var(--muted); padding-bottom: 2px; }
   .details { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
   .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
@@ -125,6 +144,8 @@ const LS_KEY = 'habit-tracker-v1';
 const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 let state = { habits: [], log: {} };   // log: { habitId: { 'YYYY-MM-DD': 1 } }
 let expanded = null;
+let view = { mode: 'month', y: 0, m: 0 }; // calendar shown for the open habit
+function resetView() { const t = today(); view = { mode: 'month', y: t.getFullYear(), m: t.getMonth() }; }
 
 // ---------- dates ----------
 const pad = n => String(n).padStart(2, '0');
@@ -281,13 +302,48 @@ function render() {
     }
     let details = '';
     if (expanded === h.id) {
-      // 5 weeks, aligned Mon–Sun, ending this week
-      const dow = (t.getDay() + 6) % 7; const start = addDays(t, -dow - 28);
-      let cells = '';
-      for (let i = 0; i < 35; i++) {
-        const d = addDays(start, i), k = key(d);
-        cells += `<div class="cell ${dayClass(h, k)} ${d > t ? 'future' : ''}" ${dayData(h, k)}>${d.getDate()}</div>`;
+      const ty = t.getFullYear(), tm = t.getMonth();
+      let cal;
+      if (view.mode === 'month') {
+        const first = new Date(view.y, view.m, 1), days = new Date(view.y, view.m + 1, 0).getDate();
+        let cells = '<div class="cell blank"></div>'.repeat((first.getDay() + 6) % 7), done = 0, slips = 0;
+        for (let i = 1; i <= days; i++) {
+          const d = new Date(view.y, view.m, i), k = key(d);
+          if (isDone(h.id, k)) done++; if (isSlip(h.id, k)) slips++;
+          cells += `<div class="cell ${dayClass(h, k)} ${d > t ? 'future' : ''}" ${dayData(h, k)}>${i}</div>`;
+        }
+        const atEnd = view.y > ty || (view.y === ty && view.m >= tm);
+        cal = `<div class="calnav">
+            <button class="nav" data-nav="-1" aria-label="Previous month">‹</button>
+            <button class="caltitle" data-mode="year">${first.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</button>
+            <button class="nav" data-nav="1" ${atEnd ? 'disabled' : ''} aria-label="Next month">›</button></div>
+          <div class="calsum">${quit ? `${done} clean day${done === 1 ? '' : 's'}${slips ? ` · ${slips} slip${slips === 1 ? '' : 's'}` : ''}` : `${done} day${done === 1 ? '' : 's'} done`}</div>
+          <div class="grid">${WEEKDAYS.map(w => `<div class="wd">${w}</div>`).join('')}${cells}</div>`;
+      } else {
+        let months = '', done = 0, slips = 0;
+        for (let m = 0; m < 12; m++) {
+          const first = new Date(view.y, m, 1), days = new Date(view.y, m + 1, 0).getDate();
+          let cells = '<i></i>'.repeat((first.getDay() + 6) % 7);
+          for (let i = 1; i <= days; i++) {
+            const d = new Date(view.y, m, i), k = key(d);
+            if (isDone(h.id, k)) done++; if (isSlip(h.id, k)) slips++;
+            cells += `<i class="${dayClass(h, k)} ${d > t ? 'future' : ''}"></i>`;
+          }
+          const future = view.y > ty || (view.y === ty && m > tm);
+          months += `<button class="mini ${future ? 'futm' : ''}" ${future ? 'disabled' : `data-month="${m}"`}>
+            <span>${first.toLocaleDateString(undefined, { month: 'short' })}</span><div class="mgrid">${cells}</div></button>`;
+        }
+        cal = `<div class="calnav">
+            <button class="nav" data-nav="-1" aria-label="Previous year">‹</button>
+            <button class="caltitle" data-mode="month">${view.y}</button>
+            <button class="nav" data-nav="1" ${view.y >= ty ? 'disabled' : ''} aria-label="Next year">›</button></div>
+          <div class="calsum">${quit ? `${done} clean day${done === 1 ? '' : 's'}${slips ? ` · ${slips} slip${slips === 1 ? '' : 's'}` : ''}` : `${done} day${done === 1 ? '' : 's'} done`} in ${view.y}</div>
+          <div class="year">${months}</div>`;
       }
+      const tabs = `<div class="seg small">
+          <button data-mode="month" class="${view.mode === 'month' ? 'sel' : ''}">Month</button>
+          <button data-mode="year" class="${view.mode === 'year' ? 'sel' : ''}">Year</button>
+          ${(view.y !== ty || (view.mode === 'month' && view.m !== tm)) ? '<button data-mode="today">Today</button>' : ''}</div>`;
       details = `<div class="details">
         <div class="stats">
           <div class="stat"><strong>${streak}</strong><small>${quit ? 'Days clean' : 'Current streak'}</small></div>
@@ -295,7 +351,7 @@ function render() {
           <div class="stat"><strong>${last30(h.id)}%</strong><small>${quit ? 'Clean, last 30 days' : 'Last 30 days'}</small></div>
         </div>
         ${quit ? `<div class="hint">Quitting since ${fromKey(h.start).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}. Every day counts as clean unless you tap it to mark a slip.</div>` : ''}
-        <div class="grid">${WEEKDAYS.map(w => `<div class="wd">${w}</div>`).join('')}${cells}</div>
+        ${tabs}${cal}
         <div class="actions">
           <button class="txt" data-edit="${h.id}">Edit</button>
           ${idx > 0 ? `<button class="txt" data-up="${h.id}">↑</button>` : ''}
@@ -399,11 +455,20 @@ document.getElementById('menuBtn').onclick = openMenu;
 
 // ---------- events ----------
 document.getElementById('list').addEventListener('click', e => {
-  const el = e.target.closest('[data-t],[data-x],[data-edit],[data-del],[data-up],[data-down]');
+  const el = e.target.closest('[data-t],[data-x],[data-edit],[data-del],[data-up],[data-down],[data-nav],[data-mode],[data-month]');
   if (!el) return;
   const d = el.dataset, find = id => state.habits.find(h => h.id === id);
   if (d.t) toggle(d.t, d.k);
-  else if (d.x) { expanded = expanded === d.x ? null : d.x; render(); }
+  else if (d.x) { expanded = expanded === d.x ? null : d.x; resetView(); render(); }
+  else if (d.nav) {
+    const n = +d.nav;
+    if (view.mode === 'year') view.y += n;
+    else { const x = new Date(view.y, view.m + n, 1); view.y = x.getFullYear(); view.m = x.getMonth(); }
+    render();
+  }
+  else if (d.month) { view.mode = 'month'; view.m = +d.month; render(); }
+  else if (d.mode === 'today') { resetView(); render(); }
+  else if (d.mode) { view.mode = d.mode; if (d.mode === 'month' && view.y === today().getFullYear() && view.m > today().getMonth()) view.m = today().getMonth(); render(); }
   else if (d.edit) openForm(find(d.edit));
   else if (d.del) openDelete(find(d.del));
   else if (d.up) move(d.up, -1);
@@ -415,6 +480,7 @@ let lastDay = key(today());
 document.addEventListener('visibilitychange', () => { if (!document.hidden && key(today()) !== lastDay) { lastDay = key(today()); render(); } });
 
 loadLocal();
+resetView();
 render();
 setInterval(() => { if (key(today()) !== lastDay) { lastDay = key(today()); render(); } }, 60000);
 
