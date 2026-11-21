@@ -1,6 +1,6 @@
 // Service worker: makes the app open offline.
 // After changing any app file, bump VERSION so phones pick up the update.
-const VERSION = 'v2';
+const VERSION = 'v3';
 const CACHE = 'habits-' + VERSION;
 const FILES = [
   './',
